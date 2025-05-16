@@ -1,0 +1,38 @@
+# 核心依賴
+numpy>=1.19.0
+opencv-python>=4.5.0
+torch>=1.8.0
+torchvision>=0.9.0
+
+# 場景理解與平面檢測
+timm>=0.4.12         # MiDaS的依賴
+onnxruntime>=1.8.0   # 高效推理
+scikit-image>=0.18.0
+
+# 物件分割
+segment-anything>=1.0   # Meta SAM
+ultralytics>=8.0.0      # YOLOv8
+
+# 相機追蹤
+pycolmap>=0.3.0         # COLMAP Python接口
+scipy>=1.7.0
+
+# 3D渲染 (Three.js在前端使用，這裡列出Python端必要的3D處理庫)
+open3d>=0.15.0
+pyrender>=0.1.45
+trimesh>=3.9.0
+
+# 光照與風格調和
+diffusers>=0.12.0     # Stable Diffusion
+transformers>=4.20.0  # Hugging Face 模型
+
+# 品質控制
+ftfy>=6.0.0           # CLIP的依賴
+regex
+tqdm
+clip @ git+https://github.com/openai/CLIP.git
+
+# 工具和Web界面
+pyyaml>=6.0
+flask>=2.0.0
+Pillow>=8.0.0
