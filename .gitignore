@@ -4,6 +4,13 @@ sam_vit_h_4b8939.pth
 sam_vit_h.pth
 sam_vit_b.pth
 yolov5xu.pt
+*.pt
+
+temp/
+output/
+
+
+midas/
 
 .DS_Store
 *.pyc

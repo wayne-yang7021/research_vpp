@@ -1,0 +1,23 @@
+input_video: input_video.mp4
+temp_frame_dir: temp/frames
+output_dir: output/processed
+fps: 5
+
+config_path: config.yaml  # 可用於 scene_understanding.py 的呼叫
+
+# Step 1 所需模型參數
+models:
+  midas:
+    model_type: MiDaS_small
+    model_path: auto
+    device: cpu
+  planercnn:
+    confidence_threshold: 0.5
+    device: cpu
+
+# Step 2 (SAM) 模型參數
+sam:
+  model_type: vit_b
+  sam_checkpoint: models/sam_vit_b.pth
+  device: cpu
+

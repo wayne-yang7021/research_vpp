@@ -13,103 +13,43 @@ from skimage import measure
 import yaml
 
 
+from modules.midas_utils import load_model
+
+
 class DepthEstimator:
     """使用MiDaS進行單張圖像深度估計"""
-    
+
     def __init__(self, config: Dict):
-        """
-        初始化深度估計器
-        
-        Args:
-            config: 配置字典，包含模型參數
-        """
         self.config = config
         self.device = torch.device(config['device'])
-        
-        # 載入模型
-        print(f"Loading MiDaS {config['model_type']} model...")
-        
-        # 使用torch hub載入模型
-        try:
-            self.model = torch.hub.load("intel-isl/MiDaS", config['model_type'])
-            self.model.to(self.device)
-            self.model.eval()
-        except Exception as e:
-            print(f"Error loading MiDaS model: {e}")
-            raise
-            
-        # 設定模型前處理參數
-        if config['model_type'] == "DPT_Large" or config['model_type'] == "DPT_Hybrid":
-            self.transform = self._get_transform(384, 384)
-        else:
-            self.transform = self._get_transform(256, 256)
-            
-        print("MiDaS model loaded successfully")
-        
-    def _get_transform(self, width: int, height: int):
-        """獲取標準化和調整大小的轉換函數"""
-        
-        def transform(img: np.ndarray) -> torch.Tensor:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) / 255.0
-            img = torch.from_numpy(img).float().permute(2, 0, 1)  # HWC -> CHW
-            
-            # 標準化
-            mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-            std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-            img = (img - mean) / std
-            
-            # 調整大小
-            img = F.interpolate(
-                img.unsqueeze(0), 
-                size=(height, width), 
-                mode="bilinear", 
-                align_corners=False
-            ).squeeze(0)
-            
-            return img
-            
-        return transform
-        
+
+        model_type = config['model_type']
+        model_path = config['model_path']
+
+        print(f"🔧 載入 MiDaS 模型: {model_type} ...")
+        self.model, self.transform = load_model(model_type, self.device)
+        print("✅ 模型載入完成")
+
     def estimate_depth(self, img: np.ndarray) -> np.ndarray:
-        """
-        從單一圖像估計深度圖
-        
-        Args:
-            img: 輸入BGR圖像 (H, W, 3)
-            
-        Returns:
-            深度圖 (H, W)，值越大表示越近
-        """
-        # 轉換並準備批次
-        input_tensor = self.transform(img).to(self.device).unsqueeze(0)
-        
-        # 推理
+        input_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) / 255.0
+        input_transformed = self.transform(input_image)
+        # input_tensor = torch.from_numpy(input_transformed).to(self.device)
+        input_tensor = input_transformed.to(self.device)
         with torch.no_grad():
             prediction = self.model(input_tensor)
-            
-            # 處理不同模型的輸出格式
-            if self.config['model_type'] == "DPT_Large" or self.config['model_type'] == "DPT_Hybrid":
-                prediction = torch.nn.functional.interpolate(
-                    prediction.unsqueeze(1),
-                    size=img.shape[:2],
-                    mode="bicubic",
-                    align_corners=False,
-                ).squeeze(1)
-            else:
-                prediction = torch.nn.functional.interpolate(
-                    prediction.unsqueeze(1),
-                    size=img.shape[:2],
-                    mode="bilinear",
-                    align_corners=False,
-                ).squeeze(1)
-        
-        depth = prediction.cpu().numpy().squeeze()
-        
-        # 標準化深度，使值在0-1範圍內
+            prediction = torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=img.shape[:2],
+                mode="bicubic",
+                align_corners=False,
+            ).squeeze(1)
+
+        depth = prediction.squeeze().cpu().numpy()
+        # Normalize to 0~1
         depth_min = depth.min()
         depth_max = depth.max()
-        depth = (depth - depth_min) / (depth_max - depth_min)
-        
+        depth = (depth - depth_min) / (depth_max - depth_min + 1e-8)
+
         return depth
 
 
@@ -254,19 +194,21 @@ class SceneUnderstanding:
         Returns:
             包含深度圖、平面信息等的字典
         """
-        # 1. 估計深度
+        print("🔍 [1/2] 正在估計深度...")
         depth_map = self.depth_estimator.estimate_depth(frame)
-        
-        # 2. 檢測平面
+        print("✅ 深度估計完成")
+
+        print("🔍 [2/2] 正在偵測平面...")
         planes, plane_mask = self.plane_detector.detect_planes(frame, depth_map)
-        
-        # 3. 返回結果
+        print(f"✅ 平面偵測完成，共偵測到 {len(planes)} 個平面")
+
         return {
             'depth_map': depth_map,
             'planes': planes,
             'plane_mask': plane_mask,
             'frame_shape': frame.shape
         }
+
     
     def visualize_results(self, frame: np.ndarray, results: Dict) -> np.ndarray:
         """
@@ -279,6 +221,7 @@ class SceneUnderstanding:
         Returns:
             可視化圖像
         """
+        print("🎨 正在生成可視化圖像...")
         # 複製原始幀
         vis_img = frame.copy()
         
@@ -329,6 +272,7 @@ class SceneUnderstanding:
         vis_combined[:h, :] = depth_vis
         vis_combined[h:, :] = plane_vis
         
+        print("✅ 圖像可視化完成")
         return vis_combined
 
 
@@ -342,7 +286,7 @@ if __name__ == "__main__":
     scene_module = SceneUnderstanding("config.yaml")
     
     # 測試單張圖像
-    img_path = "test_image.jpg"
+    img_path = "test_image.png"
     if os.path.exists(img_path):
         img = cv2.imread(img_path)
         if img is not None:
@@ -353,14 +297,19 @@ if __name__ == "__main__":
             vis_img = scene_module.visualize_results(img, results)
             
             # 顯示結果
-            cv2.imshow("Scene Understanding Results", vis_img)
-            cv2.waitKey(0)
+            print("🖼️ 按任意鍵關閉視窗...")
+            while True:
+                cv2.imshow("Scene Understanding Results", vis_img)
+                if cv2.waitKey(1) != -1:  # 有任何按鍵
+                    break
             cv2.destroyAllWindows()
             
             print(f"檢測到 {len(results['planes'])} 個平面")
             
             # 保存結果
-            cv2.imwrite("scene_understanding_results.jpg", vis_img)
+            print("💾 正在儲存結果...")
+            cv2.imwrite("scene_understanding_results.png", vis_img)
+            print("✅ 儲存完成：scene_understanding_results.png")
         else:
             print(f"無法讀取圖像: {img_path}")
     else:
